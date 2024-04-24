@@ -36,6 +36,11 @@
 #include "sensor_msgs/Imu.h"
 #include <diagnostic_updater/diagnostic_updater.h>
 
+#define CALC_BIT 0x0F
+#define INIT_STS 0x01
+#define OFFSET_STS 0x03
+#define LEVEL_STS 0x04
+
 static unsigned int counter;
 static int16_t raw_data;
 static int32_t raw_data2;
@@ -108,10 +113,34 @@ static void check_bit_error(diagnostic_updater::DiagnosticStatusWrapper& stat)
   uint8_t level = diagnostic_msgs::DiagnosticStatus::OK;
   std::string msg = "OK";
 
+  /* error status */
   if (imu_status >> 15)
   {
     level = diagnostic_msgs::DiagnosticStatus::ERROR;
     msg = "Built-In Test error :" + std::to_string(imu_status);
+  }
+
+  /* calcuration mode */
+  uint16_t calc_mode_status = imu_status & CALC_BIT;
+  if(calc_mode_status == INIT_STS)
+  {
+    level = diagnostic_msgs::DiagnosticStatus::WARN;
+    msg = "Initializing";
+  }
+  else if(calc_mode_status == OFFSET_STS)
+  {
+    level = diagnostic_msgs::DiagnosticStatus::WARN;
+    msg = "Initial attitude angle calculation in progress";
+  }
+  else if(calc_mode_status == LEVEL_STS)
+  {
+    level = diagnostic_msgs::DiagnosticStatus::OK;
+    msg = "OK";
+  }
+  else
+  {
+    level = diagnostic_msgs::DiagnosticStatus::WARN;
+    msg = "undefined bit set :" + std::to_string(imu_status);
   }
 
   stat.summary(level, msg);
