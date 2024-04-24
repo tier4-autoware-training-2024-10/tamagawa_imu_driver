@@ -127,8 +127,10 @@ static void check_calc_mode(diagnostic_updater::DiagnosticStatusWrapper& stat)
 {
   uint8_t level = diagnostic_msgs::DiagnosticStatus::OK;
   std::string msg = "OK";
+  std::string key = "bit";
 
   uint16_t calc_mode_status = imu_status & CALC_BIT;
+  std::string value = std::to_string(calc_mode_status);
   if(calc_mode_status == INIT_STS)
   {
     level = diagnostic_msgs::DiagnosticStatus::WARN;
@@ -151,6 +153,7 @@ static void check_calc_mode(diagnostic_updater::DiagnosticStatusWrapper& stat)
   }
 
   stat.summary(level, msg);
+  stat.add(key, value);
 }
 
 static void check_connection(diagnostic_updater::DiagnosticStatusWrapper& stat) 
