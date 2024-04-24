@@ -120,7 +120,14 @@ static void check_bit_error(diagnostic_updater::DiagnosticStatusWrapper& stat)
     msg = "Built-In Test error :" + std::to_string(imu_status);
   }
 
-  /* calcuration mode */
+  stat.summary(level, msg);
+}
+
+static void check_calc_mode(diagnostic_updater::DiagnosticStatusWrapper& stat) 
+{
+  uint8_t level = diagnostic_msgs::DiagnosticStatus::OK;
+  std::string msg = "OK";
+
   uint16_t calc_mode_status = imu_status & CALC_BIT;
   if(calc_mode_status == INIT_STS)
   {
@@ -185,6 +192,7 @@ int main(int argc, char **argv){
   updater.setHardwareID("tamagawa");
   updater.add("imu_bit_error", check_bit_error);
   updater.add("imu_connection", check_connection);
+  updater.add("imu_calc_mode", check_calc_mode);
   
   ros::Subscriber sub = nh.subscribe("can_tx", 100, receive_can_callback);
   pub = nh.advertise<sensor_msgs::Imu>("data_raw", 100);
