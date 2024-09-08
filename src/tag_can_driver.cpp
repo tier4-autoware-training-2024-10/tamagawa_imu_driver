@@ -320,11 +320,13 @@ int main(int argc, char **argv){
 
   ros::Timer diagnostics_timer = nh.createTimer(ros::Duration(1.0), diagnostic_timer_callback);
 
+  std::string hardware_id;
   pnh.param<bool>("use_fog", use_fog, false);
+  pnh.param<std::string>("hardware_id", hardware_id, "");
 
   diagnostic_updater::Updater updater;
   p_updater = &updater;
-  updater.setHardwareID("tamagawa");
+  updater.setHardwareID(hardware_id);
   updater.add("connection", check_connection);
   updater.add("calc_mode", check_calc_mode);                        // bit 0-3 角速度バイアスエラー
   updater.add("velocity_available", check_vel_available);           // bit 4   速度入力有無
