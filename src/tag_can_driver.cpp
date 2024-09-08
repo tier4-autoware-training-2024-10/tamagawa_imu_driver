@@ -328,7 +328,7 @@ int main(int argc, char **argv){
   p_updater = &updater;
   updater.setHardwareID(hardware_id);
   updater.add("connection", check_connection);
-  updater.add("calc_mode", check_calc_mode);                        // bit 0-3 角速度バイアスエラー
+  updater.add("calc_mode", check_calc_mode);                        // bit 0-3 演算モード
   updater.add("velocity_available", check_vel_available);           // bit 4   速度入力有無
   updater.add("heading_fixed", check_heading_fixed);                // bit 5   方位角固定
   updater.add("angler_vel_status_err", check_angler_vel_sts_err);   // bit 8   角速度ステータスエラー
