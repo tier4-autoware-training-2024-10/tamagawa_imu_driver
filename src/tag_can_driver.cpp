@@ -133,7 +133,6 @@ void receive_can_callback(const can_msgs::Frame::ConstPtr& msg){
     pub.publish(imu_msg);
 
     ready = true;
-    std::cout << dbg_imu_status << std::endl;
   }
 }
 
