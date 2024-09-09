@@ -203,7 +203,7 @@ static void check_heading_fixed(diagnostic_updater::DiagnosticStatusWrapper& sta
   }
 
   if (imu_status[5]) {
-    stat.summary(DIAG_WARN, "Heading fixed!");
+    stat.summary(DIAG_OK, "Heading fixed");
   } else {
     stat.summary(DIAG_OK, "OK");
   }
