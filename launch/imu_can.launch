@@ -6,6 +6,7 @@
   <arg name="sent_messages" default="can_rx"/>
 
   <arg name="use_fog" default="false" />
+  <arg name="hardware_id" default="IMU0_Tamagawa_TAGxxx" />
   <arg name="data_raw" default="data_raw"/>
 
   <node pkg="socketcan_bridge" name="socketcan_bridge_node" type="socketcan_bridge_node" output="screen">
@@ -15,6 +16,7 @@
   </node>
 
   <node pkg="tamagawa_imu_driver" name="tag_can_driver" type="tag_can_driver" output="screen">
+    <param name="hardware_id" value="$(arg hardware_id)" />
     <param name="use_fog" value="$(arg use_fog)" />
     <remap from="can_tx" to="$(arg received_messages)"/>
     <remap from="data_raw" to="$(arg data_raw)"/>
