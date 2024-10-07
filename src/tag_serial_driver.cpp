@@ -47,7 +47,7 @@
 using namespace boost::asio;
 using namespace std::chrono_literals;
 
-static std::string device = "/dev/ttyUSB0";
+static std::string device = "/dev/ttyUSB2";
 static std::string imu_type = "noGPS";
 static std::string rate = "50";
 static bool ready = false;
