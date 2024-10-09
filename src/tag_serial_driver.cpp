@@ -102,7 +102,7 @@ int main(int argc, char **argv)
   rclcpp::init(argc, argv, init_options);
   std::string node_name = "tag_serial_driver";
   auto node = rclcpp::Node::make_shared(node_name);
-  auto pub = node->create_publisher<sensor_msgs::msg::Imu>("imu_raw", 100);
+  auto pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 100);
 
   auto diagnostics_timer = rclcpp::create_timer(node, node->get_clock(), 1s, &diagnostic_timer_callback);
   // auto diagnostics_timer = node->create_wall_timer(1s, &diagnostic_timer_callback);
