@@ -148,7 +148,7 @@ int main(int argc, char **argv)
   serial_port.write_some(buffer(wbuf));
   std::cout << "request: " << wbuf << std::endl;
 
-  imu_msg.header.frame_id = "imu_link";
+  imu_msg.header.frame_id = "imu";
   imu_msg.orientation.x = 0.0;
   imu_msg.orientation.y = 0.0;
   imu_msg.orientation.z = 0.0;
