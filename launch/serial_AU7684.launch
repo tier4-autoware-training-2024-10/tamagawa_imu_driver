@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <launch>
-  <arg name="device" default="/dev/ttyUSB0" />
-  <arg name="imu_type" default="withGPS" />
+  <arg name="device" default="/dev/ttyIMU" />
+  <arg name="imu_type" default="noGPS" />
   <arg name="rate" default="50" />
   <arg name="use_fog" default="false" />
 
@@ -12,6 +12,7 @@
       <param name="imu_type" value="$(arg imu_type)" />
       <param name="rate" value="$(arg rate)" />
       <param name="use_fog" value="$(arg use_fog)" />
+      <param name="imu_frame_id" value="imu"/>
     </node>
   </group>
 </launch>
