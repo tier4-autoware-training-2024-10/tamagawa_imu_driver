@@ -1,3 +1,19 @@
+/*
+ * Copyright 2020 Tier IV, Inc. All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 // Copyright (c) 2019, Map IV, Inc.
 // All rights reserved.
 //
@@ -27,179 +43,172 @@
  * tag_serial_driver.cpp
  * Tamagawa IMU Driver
  * Author MapIV Sekino
+ * Ver 1.00 2019/4/4
  */
 
-#include "ros/ros.h"
-#include "sensor_msgs/Imu.h"
-#include "std_msgs/Int32.h"
-#include <string>
-#include <iostream>
-#include <unistd.h>
 #include <fcntl.h>
-#include <termios.h>
 #include <math.h>
-#include <stdio.h>
 #include <signal.h>
-#include <sys/ioctl.h>
-#include <boost/asio.hpp>
-#include <diagnostic_updater/diagnostic_updater.h>
+#include <stdio.h>
+#include <termios.h>
+#include <unistd.h>
+#include <string>
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/imu.hpp"
+#include "std_msgs/msg/int32.hpp"
 
+#include <sys/ioctl.h>
+
+std::string device = "/dev/ttyUSB0";
+std::string imu_type = "noGPS";
+std::string rate = "50";
+
+struct termios old_conf_tio;
+struct termios conf_tio;
+
+int fd;
+int counter;
+int raw_data;
+
+sensor_msgs::msg::Imu imu_msg;
+
+int serial_setup(const char * device)
+{
+  int fd = open(device, O_RDWR);
+
+  speed_t BAUDRATE = B115200;
+
+  conf_tio.c_cflag += CREAD;   // 受信有効
+  conf_tio.c_cflag += CLOCAL;  // ローカルライン（モデム制御なし）
+  conf_tio.c_cflag += CS8;     // データビット:8bit
+  conf_tio.c_cflag += 0;       // ストップビット:1bit
+  conf_tio.c_cflag += 0;
+
+  cfsetispeed(&conf_tio, BAUDRATE);
+  cfsetospeed(&conf_tio, BAUDRATE);
+
+  tcsetattr(fd, TCSANOW, &conf_tio);
+  ioctl(fd, TCSETS, &conf_tio);
+  return fd;
+}
+
+void receive_ver_req([[maybe_unused]] const std_msgs::msg::Int32::ConstSharedPtr msg)
+{
+  char ver_req[] = "$TSC,VER*29\x0d\x0a";
+  int ver_req_data = write(fd, ver_req, sizeof(ver_req));
+  if (ver_req_data >= 0) {
+    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Version Request: %s", ver_req);
+  } else {
+    RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "ERROR! Send Version Request: %s", ver_req);
+  }
+}
+
+void receive_offset_cancel_req(const std_msgs::msg::Int32::ConstSharedPtr msg)
+{
+  char offset_cancel_req[32];
+  sprintf(offset_cancel_req, "$TSC,OFC,%d\x0d\x0a", msg->data);
+  int offset_cancel_req_data = write(fd, offset_cancel_req, sizeof(offset_cancel_req));
+  if (offset_cancel_req_data >= 0) {
+    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Offset Cancel Request: %s", offset_cancel_req);
+  } else {
+    RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "ERROR! Send Offset Cancel Request: %s", offset_cancel_req);
+  }
+
+}
+
+void receive_heading_reset_req([[maybe_unused]] const std_msgs::msg::Int32::ConstSharedPtr msg)
+{
+  char heading_reset_req[] = "$TSC,HRST*29\x0d\x0a";
+  int heading_reset_req_data = write(fd, heading_reset_req, sizeof(heading_reset_req));
+  if (heading_reset_req_data >= 0) {
+    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Heading reset Request: %s", heading_reset_req);
+  } else {
+    RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "ERROR! Send Heading reset Request: %s", heading_reset_req);
+  }
+}
+
+void shutdown_cmd([[maybe_unused]] int sig)
+{
+  tcsetattr(fd, TCSANOW, &old_conf_tio);  // Revert to previous settings
+  close(fd);
+  RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Port closed");
+  rclcpp::shutdown();
+}
+
+#include <boost/asio.hpp>
 using namespace boost::asio;
 
-static std::string device = "/dev/ttyUSB0";
-static std::string imu_type = "noGPS";
-static std::string rate = "50";
-static bool use_fog = false;
-static bool ready = false;
-static sensor_msgs::Imu imu_msg;
-static int16_t imu_status;
-
-static diagnostic_updater::Updater* p_updater;
-
-
-static void check_bit_error(diagnostic_updater::DiagnosticStatusWrapper& stat) 
+int main(int argc, char ** argv)
 {
-  uint8_t level = diagnostic_msgs::DiagnosticStatus::OK;
-  std::string msg = "OK";
+  rclcpp::init(argc, argv);
+  auto node = rclcpp::Node::make_shared("tag_serial_driver");
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 1000);
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub1 = node->create_subscription<std_msgs::msg::Int32>("receive_ver_req", 10, receive_ver_req);
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub2 = node->create_subscription<std_msgs::msg::Int32>("receive_offset_cancel_req", 10, receive_offset_cancel_req);
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub3 = node->create_subscription<std_msgs::msg::Int32>("receive_heading_reset_req", 10, receive_heading_reset_req);
 
-  if (imu_status >> 15)
-  {
-    level = diagnostic_msgs::DiagnosticStatus::ERROR;
-    msg = "Built-In Test error";
-  }
+  std::string imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
 
-  stat.summary(level, msg);
-}
+  std::string port = node->declare_parameter<std::string>("port", "/dev/ttyUSB0");
 
-static void check_connection(diagnostic_updater::DiagnosticStatusWrapper& stat) 
-{
-  size_t level = diagnostic_msgs::DiagnosticStatus::OK;
-  std::string msg = "OK";
-
-  ros::Time now = ros::Time::now();
-
-  if (now - imu_msg.header.stamp > ros::Duration(1.0)) {
-    level = diagnostic_msgs::DiagnosticStatus::ERROR;
-    msg = "Message timeout";
-  }
-
-  stat.summary(level, msg);
-}
-
-void diagnostic_timer_callback(const ros::TimerEvent& event)
-{
-  if(ready)
-  {
-    p_updater->force_update();
-    ready = false;
-  }
-}
-
-int main(int argc, char** argv)
-{
-  ros::init(argc, argv, "tag_serial_driver", ros::init_options::NoSigintHandler);
-  ros::NodeHandle nh;
-  ros::NodeHandle pnh("~");
-  ros::Publisher pub = nh.advertise<sensor_msgs::Imu>("data_raw", 1000);
   io_service io;
-
-  ros::Timer diagnostics_timer = nh.createTimer(ros::Duration(1.0), diagnostic_timer_callback);
-
-  diagnostic_updater::Updater updater;
-  p_updater = &updater;
-  updater.setHardwareID("tamagawa");
-  updater.add("imu_bit_error", check_bit_error);
-  updater.add("imu_connection", check_connection);
-
-  pnh.param<std::string>("device", device, "/dev/ttyUSB0");
-  pnh.param<std::string>("imu_type", imu_type, "noGPS");
-  pnh.param<std::string>("rate", rate, "50");
-  pnh.param<bool>("use_fog", use_fog, false);
-
-  std::cout << "device= " << device << " imu_type= " << imu_type << " rate= " << rate << " use_fog= " << std::boolalpha << use_fog << std::endl;
-
-  serial_port serial_port(io, device);
+  serial_port serial_port(io, port.c_str());
   serial_port.set_option(serial_port_base::baud_rate(115200));
   serial_port.set_option(serial_port_base::character_size(8));
   serial_port.set_option(serial_port_base::flow_control(serial_port_base::flow_control::none));
   serial_port.set_option(serial_port_base::parity(serial_port_base::parity::none));
   serial_port.set_option(serial_port_base::stop_bits(serial_port_base::stop_bits::one));
 
-  // Data output request to IMU
-  std::string wbuf = "$TSC,BIN,";
-  wbuf += rate;
-  wbuf += "\x0d\x0a";
+  std::string wbuf = "$TSC,BIN,30\x0d\x0a";
+  std::size_t length;
   serial_port.write_some(buffer(wbuf));
-  std::cout << "request: " << wbuf << std::endl;
 
-  imu_msg.header.frame_id = "imu";
+  rclcpp::Rate loop_rate(30.0);
+
   imu_msg.orientation.x = 0.0;
   imu_msg.orientation.y = 0.0;
   imu_msg.orientation.z = 0.0;
   imu_msg.orientation.w = 1.0;
 
-  size_t counter;
-  int16_t raw_data;
-  int32_t raw_data_2;
+  while (rclcpp::ok()) {
+    rclcpp::spin_some(node);
 
-  while (ros::ok())
-  {
-    //ros::spinOnce();
     boost::asio::streambuf response;
     boost::asio::read_until(serial_port, response, "\n");
-    std::string rbuf(boost::asio::buffers_begin(response.data()), boost::asio::buffers_end(response.data()));
+    std::string rbuf(
+      boost::asio::buffers_begin(response.data()), boost::asio::buffers_end(response.data()));
 
-    if (rbuf[5] == 'B' && rbuf[6] == 'I' && rbuf[7] == 'N' && rbuf[8] == ',')
-    {
-      imu_msg.header.stamp = ros::Time::now();
-      if (use_fog)
-      {
-        ROS_INFO_ONCE("BIN-w/FOG");
-        counter = ((rbuf[11] << 24) & 0xFF000000) | ((rbuf[12] << 16) & 0x00FF0000);
-        imu_status = ((rbuf[13] << 8) & 0xFFFFFF00) | (rbuf[14] & 0x000000FF);
+    length = rbuf.size();
+
+    if (length > 0) {
+      if (rbuf[5] == 'B' && rbuf[6] == 'I' && rbuf[7] == 'N' && rbuf[8] == ',' && length == 58) {
+        imu_msg.header.frame_id = imu_frame_id;
+        imu_msg.header.stamp = node->now();
+
+        counter = ((rbuf[11] << 8) & 0x0000FF00) | (rbuf[12] & 0x000000FF);
         raw_data = ((((rbuf[15] << 8) & 0xFFFFFF00) | (rbuf[16] & 0x000000FF)));
         imu_msg.angular_velocity.x =
           raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
         raw_data = ((((rbuf[17] << 8) & 0xFFFFFF00) | (rbuf[18] & 0x000000FF)));
         imu_msg.angular_velocity.y =
-            raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-        raw_data_2 = ((rbuf[19] << 24) & 0xFF000000) | ((rbuf[20] << 16) & 0x00FF0000) | ((rbuf[21] << 8) & 0x0000FF00) |
-                  (rbuf[22] & 0x000000FF);
-        imu_msg.angular_velocity.z =
-            raw_data_2 * (200 / pow(2, 31)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-        raw_data = ((((rbuf[23] << 8) & 0xFFFFFF00) | (rbuf[24] & 0x000000FF)));
-        imu_msg.linear_acceleration.x = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
-        raw_data = ((((rbuf[25] << 8) & 0xFFFFFF00) | (rbuf[26] & 0x000000FF)));
-        imu_msg.linear_acceleration.y = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
-        raw_data = ((((rbuf[27] << 8) & 0xFFFFFF00) | (rbuf[28] & 0x000000FF)));
-        imu_msg.linear_acceleration.z = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
-        pub.publish(imu_msg);
-      }
-      else
-      {
-        ROS_INFO_ONCE("BIN-w/oFOG");
-        counter = ((rbuf[11] << 8) & 0x0000FF00) | (rbuf[12] & 0x000000FF);
-        imu_status = ((rbuf[13] << 8) & 0xFFFFFF00) | (rbuf[14] & 0x000000FF);
-        raw_data = ((((rbuf[15] << 8) & 0xFFFFFF00) | (rbuf[16] & 0x000000FF)));
-        imu_msg.angular_velocity.x =
-            raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-        raw_data = ((((rbuf[17] << 8) & 0xFFFFFF00) | (rbuf[18] & 0x000000FF)));
-        imu_msg.angular_velocity.y =
-            raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+          raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
         raw_data = ((((rbuf[19] << 8) & 0xFFFFFF00) | (rbuf[20] & 0x000000FF)));
         imu_msg.angular_velocity.z =
-            raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+          raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
         raw_data = ((((rbuf[21] << 8) & 0xFFFFFF00) | (rbuf[22] & 0x000000FF)));
         imu_msg.linear_acceleration.x = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
         raw_data = ((((rbuf[23] << 8) & 0xFFFFFF00) | (rbuf[24] & 0x000000FF)));
         imu_msg.linear_acceleration.y = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
         raw_data = ((((rbuf[25] << 8) & 0xFFFFFF00) | (rbuf[26] & 0x000000FF)));
         imu_msg.linear_acceleration.z = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
-        pub.publish(imu_msg);
-        //std::cout << counter << std::endl;
+
+        pub->publish(imu_msg);
+
+      } else if (rbuf[5] == 'V' && rbuf[6] == 'E' && rbuf[7] == 'R' && rbuf[8] == ',') {
+        RCLCPP_DEBUG(rclcpp::get_logger("tag_serial_driver"), "%s", rbuf.c_str());
       }
-      ready = true;
     }
   }
+
   return 0;
 }

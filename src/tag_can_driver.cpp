@@ -1,3 +1,19 @@
+/*
+ * Copyright 2020 Tier IV, Inc. All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 // Copyright (c) 2019, Map IV, Inc.
 // All rights reserved.
 //
@@ -27,139 +43,68 @@
  * tag_can_driver.cpp
  * Tamagawa IMU Driver
  * Author MapIV Sekino
+ * Ver 1.00 2019/6/1
  */
 
-#include <iostream>
+#include "can_msgs/msg/frame.hpp"
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/imu.hpp"
 
-#include "ros/ros.h"
-#include "can_msgs/Frame.h"
-#include "sensor_msgs/Imu.h"
-#include <diagnostic_updater/diagnostic_updater.h>
+rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub;
 
-static unsigned int counter;
-static int16_t raw_data;
-static int32_t raw_data2;
-static uint16_t imu_status;
-static bool use_fog;
-static bool ready = false;
+uint16_t counter;
+int16_t angular_velocity_x_raw = 0;
+int16_t angular_velocity_y_raw = 0;
+int16_t angular_velocity_z_raw = 0;
+int16_t acceleration_x_raw = 0;
+int16_t acceleration_y_raw = 0;
+int16_t acceleration_z_raw = 0;
 
-static diagnostic_updater::Updater* p_updater;
+sensor_msgs::msg::Imu imu_msg;
+std::string imu_frame_id;
 
-static sensor_msgs::Imu imu_msg;
-static ros::Publisher pub;
+void receive_CAN(const can_msgs::msg::Frame::ConstSharedPtr msg)
+{
+  if (msg->id == 0x319) {
+    imu_msg.header.frame_id = imu_frame_id;
+    imu_msg.header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
 
-void receive_can_callback(const can_msgs::Frame::ConstPtr& msg){
-
-  if(msg->id == 0x319)
-  {
-    imu_msg.header.frame_id = "imu";
-    imu_msg.header.stamp = msg->header.stamp;
-
-    if (use_fog) 
-    {
-      raw_data = msg->data[1] + (msg->data[0] << 8);
-      imu_msg.angular_velocity.x =
-          raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-      raw_data = msg->data[3] + (msg->data[2] << 8);
-      imu_msg.angular_velocity.y =
-          raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-      raw_data2 = (msg->data[7] + (msg->data[6] << 8)) + ((msg->data[5] << 16) + (msg->data[4] << 24));
-      imu_msg.angular_velocity.z =
-          raw_data2 * (200 / pow(2, 31)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-    }
-    else 
-    {
-      counter = msg->data[1] + (msg->data[0] << 8);
-      raw_data = msg->data[3] + (msg->data[2] << 8);
-      imu_msg.angular_velocity.x =
-          raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-      raw_data = msg->data[5] + (msg->data[4] << 8);
-      imu_msg.angular_velocity.y =
-          raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-      raw_data = msg->data[7] + (msg->data[6] << 8);
-      imu_msg.angular_velocity.z =
-        raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-    }
-    
+    counter = msg->data[1] + (msg->data[0] << 8);
+    angular_velocity_x_raw = msg->data[3] + (msg->data[2] << 8);
+    imu_msg.angular_velocity.x =
+      angular_velocity_x_raw * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+    angular_velocity_y_raw = msg->data[5] + (msg->data[4] << 8);
+    imu_msg.angular_velocity.y =
+      angular_velocity_y_raw * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+    angular_velocity_z_raw = msg->data[7] + (msg->data[6] << 8);
+    imu_msg.angular_velocity.z =
+      angular_velocity_z_raw * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
   }
-  else if(msg->id == 0x31A)
-  {
-    imu_status = msg->data[1] + (msg->data[0] << 8);
-    raw_data = msg->data[3] + (msg->data[2] << 8);
-    imu_msg.linear_acceleration.x = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
-    raw_data = msg->data[5] + (msg->data[4] << 8);
-    imu_msg.linear_acceleration.y = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
-    raw_data = msg->data[7] + (msg->data[6] << 8);
-    imu_msg.linear_acceleration.z = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
+  if (msg->id == 0x31A) {
+    acceleration_x_raw = msg->data[3] + (msg->data[2] << 8);
+    imu_msg.linear_acceleration.x = acceleration_x_raw * (100 / pow(2, 15));  // LSB & unit [m/s^2]
+    acceleration_y_raw = msg->data[5] + (msg->data[4] << 8);
+    imu_msg.linear_acceleration.y = acceleration_y_raw * (100 / pow(2, 15));  // LSB & unit [m/s^2]
+    acceleration_z_raw = msg->data[7] + (msg->data[6] << 8);
+    imu_msg.linear_acceleration.z = acceleration_z_raw * (100 / pow(2, 15));  // LSB & unit [m/s^2]
 
     imu_msg.orientation.x = 0.0;
     imu_msg.orientation.y = 0.0;
     imu_msg.orientation.z = 0.0;
     imu_msg.orientation.w = 1.0;
-    pub.publish(imu_msg);
-
-    ready = true;
-    //std::cout << counter << std::endl;
+    pub->publish(imu_msg);
   }
 }
 
-static void check_bit_error(diagnostic_updater::DiagnosticStatusWrapper& stat) 
+int main(int argc, char ** argv)
 {
-  uint8_t level = diagnostic_msgs::DiagnosticStatus::OK;
-  std::string msg = "OK";
+  rclcpp::init(argc, argv);
 
-  if (imu_status >> 15)
-  {
-    level = diagnostic_msgs::DiagnosticStatus::ERROR;
-    msg = "Built-In Test error :" + std::to_string(imu_status);
-  }
-
-  stat.summary(level, msg);
-}
-
-static void check_connection(diagnostic_updater::DiagnosticStatusWrapper& stat) 
-{
-  size_t level = diagnostic_msgs::DiagnosticStatus::OK;
-  std::string msg = "OK";
-
-  ros::Time now = ros::Time::now();
-
-  if (now - imu_msg.header.stamp > ros::Duration(1.0)) {
-    level = diagnostic_msgs::DiagnosticStatus::ERROR;
-    msg = "Message timeout";
-  }
-
-  stat.summary(level, msg);
-}
-
-void diagnostic_timer_callback(const ros::TimerEvent& event)
-{
-  if(ready)
-  {
-    p_updater->force_update();
-    ready = false;
-  }
-}
-
-int main(int argc, char **argv){
-
-  ros::init(argc, argv, "tag_can_driver");
-  ros::NodeHandle nh;
-  ros::NodeHandle pnh("~");
-
-  ros::Timer diagnostics_timer = nh.createTimer(ros::Duration(1.0), diagnostic_timer_callback);
-
-  pnh.param<bool>("use_fog", use_fog, false);
-
-  diagnostic_updater::Updater updater;
-  p_updater = &updater;
-  updater.setHardwareID("tamagawa");
-  updater.add("imu_bit_error", check_bit_error);
-  updater.add("imu_connection", check_connection);
-  
-  ros::Subscriber sub = nh.subscribe("can_tx", 100, receive_can_callback);
-  pub = nh.advertise<sensor_msgs::Imu>("data_raw", 100);
-  ros::spin();
+  auto node = rclcpp::Node::make_shared("tag_can_driver");
+  imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
+  rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr sub = node->create_subscription<can_msgs::msg::Frame>("/can/imu", 100, receive_CAN);
+  pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 100);
+  rclcpp::spin(node);
 
   return 0;
 }
