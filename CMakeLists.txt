@@ -1,47 +1,31 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.5)
 project(tamagawa_imu_driver)
 
-SET(CMAKE_CXX_FLAGS "-std=c++11 -O2 -g -Wall ${CMAKE_CXX_FLAGS}")
+### Compile options
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 14)
+endif()
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+endif()
 
-find_package(catkin REQUIRED COMPONENTS
-  can_msgs
-  diagnostic_msgs
-  roscpp
-  sensor_msgs
+### Find Packages
+find_package(ament_cmake_auto REQUIRED)
+ament_auto_find_build_dependencies()
+
+ament_auto_add_executable(tag_serial_driver
+	src/tag_serial_driver.cpp
 )
 
-catkin_package(
-  CATKIN_DEPENDS
-  can_msgs
-  diagnostic_msgs
-  diagnostic_updater
+ament_auto_add_executable(tag_can_driver
+	src/tag_can_driver.cpp
 )
 
-include_directories(
-  ${catkin_INCLUDE_DIRS}
-  include
-)
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  ament_lint_auto_find_test_dependencies()
+endif()
 
-add_executable(tag_serial_driver src/tag_serial_driver.cpp)
-target_link_libraries(tag_serial_driver ${catkin_LIBRARIES})
-
-add_executable(tag_can_driver src/tag_can_driver.cpp)
-target_link_libraries(tag_can_driver ${catkin_LIBRARIES})
-
-install(TARGETS tag_serial_driver tag_can_driver
-  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
-)
-
-install(TARGETS
-  tag_serial_driver
-  tag_can_driver
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-install(
-  DIRECTORY
-    launch
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+ament_auto_package(INSTALL_TO_SHARE
+  launch
 )
